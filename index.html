@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DeepSeek Chat</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 </head>
 <body>
     <div class="app-container">
@@ -18,10 +19,21 @@
                     <svg width="16" height="16" viewBox="0 0 24 24">
                         <path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
                     </svg>
-                    新对话
+                    新建对话
                 </button>
                 <div class="chat-history">
-                    <!-- 聊天历史记录将在这里显示 -->
+                    <div class="history-section">
+                        <div class="section-header">
+                            <span>最近7天</span>
+                        </div>
+                        <div class="recent-chats"></div>
+                    </div>
+                    <div class="history-section">
+                        <div class="section-header">
+                            <span>收藏</span>
+                        </div>
+                        <div class="favorite-chats"></div>
+                    </div>
                 </div>
                 <div class="user-profile">
                     <button class="user-info-button">
@@ -42,7 +54,12 @@
         <div class="main-content">
             <header>
                 <div class="header-left">
-                    <span class="header-title">新对话</span>
+                    <button class="toggle-menu">
+                        <svg width="24" height="24" viewBox="0 0 24 24" class="header-menu">
+                            <path fill="currentColor" d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
+                        </svg>
+                    </button>
+                    
                 </div>
                 <button class="toggle-sidebar">
                     <svg width="24" height="24" viewBox="0 0 24 24">
@@ -67,20 +84,6 @@
             
             <footer>
                 <div class="message-box">
-                    <div class="feature-buttons">
-                        <button class="feature-button">
-                            <svg width="20" height="20" viewBox="0 0 24 24">
-                                <path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
-                            </svg>
-                            深度思考 (R1)
-                        </button>
-                        <button class="feature-button">
-                            <svg width="20" height="20" viewBox="0 0 24 24">
-                                <path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
-                            </svg>
-                            联网搜索
-                        </button>
-                    </div>
                     <div class="input-container">
                         <input type="text" placeholder="给 DeepSeek 发送消息" class="message-input">
                         <button class="send-button">
@@ -95,221 +98,531 @@
     </div>
 </body>
 <script>
-    const appContainer = document.querySelector('.app-container');
-    const toggleButton = document.querySelector('.toggle-sidebar');
-    const welcomeContainer = document.querySelector('.welcome-container');
-    const chatContainer = document.querySelector('.chat-container');
-    const messageInput = document.querySelector('.message-input');
-    const sendButton = document.querySelector('.send-button');
-    const newChatButton = document.querySelector('.new-chat-button');
-    const chatHistory = document.querySelector('.chat-history');
-    let currentChatId = null;
-    let isFirstMessage = true;
+    $(document).ready(function() {
+        const $appContainer = $('.app-container');
+        const $toggleButton = $('.toggle-sidebar');
+        const $welcomeContainer = $('.welcome-container');
+        const $chatContainer = $('.chat-container');
+        const $messageInput = $('.message-input');
+        const $sendButton = $('.send-button');
+        const $newChatButton = $('.new-chat-button');
+        const $chatHistory = $('.chat-history');
+        let currentChatId = null;
+        let isFirstMessage = true;
 
-    // 生成唯一ID
-    function generateId() {
-        return Date.now().toString(36) + Math.random().toString(36).substr(2);
-    }
+        // 数据服务层
+        const chatService = {
+            // 获取聊天历史
+            getChatHistory: () => {
+                return JSON.parse(localStorage.getItem('chatHistory')) || [];
+            },
+            
+            // 保存聊天历史
+            saveChatHistory: (history) => {
+                localStorage.setItem('chatHistory', JSON.stringify(history));
+            },
+            
+            // 获取单个聊天
+            getChat: (chatId) => {
+                const history = chatService.getChatHistory();
+                return history.find(c => c.id === chatId);
+            },
+            
+            // 保存单个聊天
+            saveChat: (chat) => {
+                const history = chatService.getChatHistory();
+                const index = history.findIndex(c => c.id === chat.id);
+                if (index !== -1) {
+                    history[index] = chat;
+                } else {
+                    history.unshift(chat);
+                }
+                chatService.saveChatHistory(history);
+            },
+            
+            // 删除聊天
+            deleteChat: (chatId) => {
+                const history = chatService.getChatHistory();
+                const newHistory = history.filter(chat => chat.id !== chatId);
+                chatService.saveChatHistory(newHistory);
+            },
+            
+            // 更新聊天
+            updateChat: (chatId, updates) => {
+                const chat = chatService.getChat(chatId);
+                if (chat) {
+                    const updatedChat = { ...chat, ...updates };
+                    chatService.saveChat(updatedChat);
+                }
+            }
+        };
 
-    // 从本地存储加载聊天历史
-    function loadChatHistory() {
-        const history = JSON.parse(localStorage.getItem('chatHistory')) || [];
-        chatHistory.innerHTML = '';
-        
-        history.forEach(chat => {
-            const chatElement = document.createElement('div');
-            chatElement.className = 'chat-item';
-            chatElement.innerHTML = `
-                <div class="chat-item-content" data-id="${chat.id}">
-                    <svg width="16" height="16" viewBox="0 0 24 24">
-                        <path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
-                    </svg>
-                    <span>${chat.title || '新对话'}</span>
-                    <button class="delete-chat" title="删除对话">
-                        <svg width="14" height="14" viewBox="0 0 24 24">
-                            <path fill="currentColor" d="M9 3v1H4v2h1v13c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V6h1V4h-5V3H9zm0 5h2v9H9V8zm4 0h2v9h-2V8z"/>
-                        </svg>
-                    </button>
-                </div>
-            `;
-            chatHistory.appendChild(chatElement);
+        // 生成唯一ID
+        function generateId() {
+            return Date.now().toString(36) + Math.random().toString(36).substr(2);
+        }
 
-            // 为每个聊天项添加点击事件
-            const contentElement = chatElement.querySelector('.chat-item-content');
-            contentElement.addEventListener('click', (e) => {
-                // 如果点击的是删除按钮，不要触发加载聊天
-                if (!e.target.closest('.delete-chat')) {
-                    loadChat(chat.id);
+        // 根据时间戳获取分类
+        function getTimeCategory(timestamp) {
+            const now = new Date();
+            const date = new Date(timestamp);
+            const isWithin7Days = now - date <= 7 * 86400000;
+            
+            if (isWithin7Days) return '近7天';
+            return '收藏';
+        }
+
+        // 从本地存储加载聊天历史
+        function loadChatHistory() {
+            const history = chatService.getChatHistory();
+            const $recentChats = $('.recent-chats');
+            const $favoriteChats = $('.favorite-chats');
+            const now = new Date();
+            
+            $recentChats.empty();
+            $favoriteChats.empty();
+            
+            history.forEach(chat => {
+                const chatDate = new Date(chat.timestamp || Date.now());
+                const isRecent = (now - chatDate) <= 7 * 24 * 60 * 60 * 1000;
+                
+                const $chatElement = $(`
+                    <div class="chat-item">
+                        <div class="chat-item-content" data-id="${chat.id}">
+                            <svg width="16" height="16" viewBox="0 0 24 24">
+                                <path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
+                            </svg>
+                            <span>${chat.title || '新对话'}</span>
+                            <div class="chat-actions">
+                                <span class="favorite-button ${chat.favorite ? 'favorite' : ''}" title="${chat.favorite ? '取消收藏' : '收藏'}">
+                                    <svg width="16" height="16" viewBox="0 0 24 24">
+                                        <path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                                    </svg>
+                                </span>
+                                <span class="delete-chat" title="删除对话">
+                                    <svg width="14" height="14" viewBox="0 0 24 24">
+                                        <path fill="currentColor" d="M9 3v1H4v2h1v13c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V6h1V4h-5V3H9zm0 5h2v9H9V8zm4 0h2v9h-2V8z"/>
+                                    </svg>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                `);
+                
+                if (chat.favorite) {
+                    $favoriteChats.append($chatElement);
+                } else if (isRecent) {
+                    $recentChats.append($chatElement);
+                }
+                
+                // 为每个聊天项添加点击事件
+                $chatElement.find('.chat-item-content').on('click', function(e) {
+                    if (!$(e.target).closest('.delete-chat').length && !$(e.target).closest('.favorite-button').length) {
+                        loadChat(chat.id);
+                    }
+                });
+                
+                // 为收藏按钮添加点击事件
+                $chatElement.find('.favorite-button').on('click', function(e) {
+                    e.stopPropagation();
+                    toggleFavorite(chat.id);
+                });
+                
+                // 为删除按钮添加点击事件
+                $chatElement.find('.delete-chat').on('click', function(e) {
+                    e.stopPropagation();
+                    deleteChat(chat.id);
+                });
+            });
+        }
+
+        // 加载特定的聊天
+        function loadChat(chatId) {
+            const history = chatService.getChatHistory();
+            const chat = history.find(c => c.id === chatId);
+            if (!chat) return;
+
+            currentChatId = chatId;
+            $chatContainer.empty();
+            $welcomeContainer.hide();
+            $chatContainer.show();
+            isFirstMessage = false;
+
+            chat.messages.forEach(msg => {
+                try {
+                    // 尝试解析消息内容
+                    const parsedContent = JSON.parse(msg.content);
+                    if (parsedContent && parsedContent.type) {
+                        // 如果是特殊类型的消息，使用 streamResponse 处理
+                        const $messageDiv = $('<div>').addClass(`message ${msg.type}-message`);
+                        const $messageContent = $('<div>').addClass('message-content');
+                        const $messageText = $('<div>').addClass('message-text');
+                        $messageContent.append($messageText);
+                        $messageDiv.append($messageContent);
+                        $chatContainer.append($messageDiv);
+                        streamResponse(parsedContent, $messageText, false);
+                    } else {
+                        // 普通文本消息
+                        addMessage(msg.content, msg.type, false);
+                    }
+                } catch (e) {
+                    // 如果不是 JSON 格式，按普通文本处理
+                    addMessage(msg.content, msg.type, false);
                 }
             });
 
-            // 为删除按钮添加点击事件
-            const deleteButton = chatElement.querySelector('.delete-chat');
-            deleteButton.addEventListener('click', (e) => {
-                e.stopPropagation(); // 阻止事件冒泡
-                deleteChat(chat.id);
+            // 更新所有聊天项的样式
+            $('.chat-item-content').removeClass('active').filter(`[data-id="${chatId}"]`).addClass('active');
+        }
+
+        // 更新对话时间戳并移动到最新
+        function updateChatTimestamp(chatId) {
+            const chat = chatService.getChat(chatId);
+            if (chat) {
+                chat.timestamp = Date.now();
+                chatService.saveChat(chat);
+                loadChatHistory();
+                
+                $('.chat-item-content').removeClass('active').filter(`[data-id="${chatId}"]`).addClass('active');
+            }
+        }
+
+        // 保存聊天记录
+        function saveChat(message, type) {
+            if (isFirstMessage) {
+                currentChatId = generateId();
+                const newChat = {
+                    id: currentChatId,
+                    title: message.substring(0, 20) + '...',
+                    messages: [],
+                    timestamp: Date.now(),
+                    favorite: false
+                };
+                chatService.saveChat(newChat);
+                isFirstMessage = false;
+            }
+
+            const chat = chatService.getChat(currentChatId);
+            if (chat) {
+                chat.messages.push({ content: message, type });
+                chatService.saveChat(chat);
+                loadChatHistory();
+            }
+        }
+
+        // 获取随机文本响应
+        function getRandomResponse() {
+            const responses = [
+                "我明白了，让我来帮你解答这个问题。首先，我们需要考虑几个关键点...",
+                "这是一个很好的问题，我的建议是：1. 首先... 2. 其次... 3. 最后...",
+                "根据你的描述，我认为可以这样处理：",
+                "让我为你分析一下这个情况。从专业角度来看...",
+                "这个问题有几个关键点需要考虑：第一点... 第二点... 第三点..."
+            ];
+            return responses[Math.floor(Math.random() * responses.length)];
+        }
+
+        // 添加消息到聊天界面
+        function addMessage(text, type, save = true) {
+            const $messageDiv = $('<div>').addClass(`message ${type}-message`);
+            const messageHTML = `
+                <div class="message-content">
+                    <div class="message-text">${text.replace(/\n/g, '<br>')}</div>
+                </div>
+            `;
+            $messageDiv.html(messageHTML);
+            $chatContainer.append($messageDiv);
+            
+            // 使用 requestAnimationFrame 确保在下一帧渲染时滚动
+            requestAnimationFrame(() => {
+                $chatContainer.scrollTop($chatContainer[0].scrollHeight);
+                $('main').scrollTop($('main')[0].scrollHeight);
+                setTimeout(() => {
+                    $chatContainer.scrollTop($chatContainer[0].scrollHeight);
+                    $('main').scrollTop($('main')[0].scrollHeight);
+                }, 100);
             });
-        });
-    }
 
-    // 加载特定的聊天
-    function loadChat(chatId) {
-        const history = JSON.parse(localStorage.getItem('chatHistory')) || [];
-        const chat = history.find(c => c.id === chatId);
-        if (!chat) return;
-
-        currentChatId = chatId;
-        chatContainer.innerHTML = '';
-        welcomeContainer.style.display = 'none';
-        chatContainer.style.display = 'flex';
-        isFirstMessage = false;
-
-        chat.messages.forEach(msg => {
-            addMessage(msg.content, msg.type, false);
-        });
-
-        // 更新所有聊天项的样式
-        document.querySelectorAll('.chat-item-content').forEach(item => {
-            item.classList.toggle('active', item.dataset.id === chatId);
-        });
-    }
-
-    // 保存聊天记录
-    function saveChat(message, type) {
-        const history = JSON.parse(localStorage.getItem('chatHistory')) || [];
-        
-        if (isFirstMessage) {
-            currentChatId = generateId();
-            const newChat = {
-                id: currentChatId,
-                title: message.substring(0, 20) + '...',
-                messages: []
-            };
-            history.unshift(newChat);
-            isFirstMessage = false;
+            if (save) {
+                saveChat(text, type);
+            }
         }
 
-        const chat = history.find(c => c.id === currentChatId);
-        if (chat) {
-            chat.messages.push({ content: message, type });
-            localStorage.setItem('chatHistory', JSON.stringify(history));
-            loadChatHistory(); // 刷新侧边栏
+        // 发送消息的函数
+        function sendMessage() {
+            const message = $messageInput.val().trim();
+            if (!message) return;
+
+            if (isFirstMessage) {
+                $welcomeContainer.hide();
+                $chatContainer.show();
+            }
+
+            addMessage(message, 'user', true);
+            $messageInput.val('');
+
+            // 创建AI消息容器
+            const $aiMessageDiv = $('<div>').addClass('message ai-message').html(`
+                <div class="message-content">
+                    <div class="message-text"></div>
+                </div>
+            `);
+            $chatContainer.append($aiMessageDiv);
+            $chatContainer.scrollTop($chatContainer[0].scrollHeight);
+
+            // 模拟 WebSocket 连接和响应
+            simulateWebSocketResponse(message, $aiMessageDiv.find('.message-text'));
         }
-    }
 
-    // 发送消息的函数
-    function sendMessage() {
-        const message = messageInput.value.trim();
-        if (!message) return;
+        // 模拟 WebSocket 响应
+        function simulateWebSocketResponse(message, $messageElement) {
+            const isSpecialResponse = message.includes('人物') || 
+                                    message.includes('角色') || 
+                                    message.includes('介绍') ||
+                                    message.includes('天气') ||
+                                    message.includes('新闻');
 
-        if (isFirstMessage) {
-            welcomeContainer.style.display = 'none';
-            chatContainer.style.display = 'flex';
+            if (isSpecialResponse) {
+                $messageElement.html(`
+                    <div class="loading-container">
+                        <div class="loading-spinner"></div>
+                        <div class="loading-text">正在加载...</div>
+                    </div>
+                `);
+            }
+
+            setTimeout(() => {
+                let response;
+                
+                if (message.includes('人物') || message.includes('角色') || message.includes('介绍')) {
+                    response = {
+                        type: 'character_card',
+                        content: {
+                            name: '张三',
+                            title: '高级工程师',
+                            avatar: 'https://www.deepseek.com/favicon.ico',
+                            description: '拥有10年开发经验的全栈工程师，专注于人工智能和机器学习领域。',
+                            skills: ['JavaScript', 'Python', 'AI', '机器学习'],
+                            contact: {
+                                email: 'zhangsan@example.com',
+                                location: '北京'
+                            }
+                        }
+                    };
+                } else if (message.includes('天气')) {
+                    response = {
+                        type: 'weather_card',
+                        content: {
+                            location: '北京',
+                            temperature: '25°C',
+                            weather: '晴朗',
+                            humidity: '65%',
+                            wind: '东南风 3级'
+                        }
+                    };
+                } else if (message.includes('新闻')) {
+                    response = {
+                        type: 'news_list',
+                        content: {
+                            title: '今日热点新闻',
+                            items: [
+                                {
+                                    title: 'AI技术突破性进展',
+                                    summary: '最新研究显示，AI在自然语言处理领域取得重大突破...',
+                                    time: '10分钟前'
+                                },
+                                {
+                                    title: '全球科技发展趋势',
+                                    summary: '2024年全球科技发展呈现新特点...',
+                                    time: '30分钟前'
+                                }
+                            ]
+                        }
+                    };
+                } else {
+                    response = {
+                        type: 'text',
+                        content: getRandomResponse()
+                    };
+                }
+
+                streamResponse(response, $messageElement);
+            }, 500);
         }
 
-        addMessage(message, 'user', true);
-        messageInput.value = '';
-
-        setTimeout(() => {
-            const aiResponse = getAIResponse(message);
-            addMessage(aiResponse, 'ai', true);
-        }, 1000);
-    }
-
-    // 添加消息到聊天界面
-    function addMessage(text, type, save = true) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${type}-message`;
-
-        const messageHTML = type === 'user' ? `
-            <div class="message-content">
-                <div class="message-text">${text.replace(/\n/g, '<br>')}</div>
-            </div>
-            <div class="message-avatar">
-                <svg viewBox="0 0 24 24" width="24" height="24">
-                    <path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
-                </svg>
-            </div>
-        ` : `
-            <div class="message-avatar">
-                <img src="https://www.deepseek.com/favicon.ico" alt="DeepSeek">
-            </div>
-            <div class="message-content">
-                <div class="message-text">${text.replace(/\n/g, '<br>')}</div>
-            </div>
-        `;
-
-        messageDiv.innerHTML = messageHTML;
-        chatContainer.appendChild(messageDiv);
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-
-        if (save) {
-            saveChat(text, type);
+        // 流式响应函数
+        function streamResponse(response, $element, shouldSave = true) {
+            if (response.type === 'character_card') {
+                const card = response.content;
+                $element.html(`
+                    <div class="character-card">
+                        <div class="character-header">
+                            <img src="${card.avatar}" alt="${card.name}" class="character-avatar">
+                            <div class="character-info">
+                                <h3>${card.name}</h3>
+                                <p class="character-title">${card.title}</p>
+                            </div>
+                        </div>
+                        <div class="character-description">
+                            <p>${card.description}</p>
+                        </div>
+                        <div class="character-skills">
+                            <h4>技能</h4>
+                            <div class="skill-tags">
+                                ${card.skills.map(skill => `<span class="skill-tag">${skill}</span>`).join('')}
+                            </div>
+                        </div>
+                        <div class="character-contact">
+                            <h4>联系方式</h4>
+                            <p>邮箱：${card.contact.email}</p>
+                            <p>地点：${card.contact.location}</p>
+                        </div>
+                    </div>
+                `);
+                if (shouldSave) {
+                    saveChat(JSON.stringify(response), 'ai');
+                }
+                scrollToBottom();
+            } else if (response.type === 'weather_card') {
+                const weather = response.content;
+                $element.html(`
+                    <div class="weather-card">
+                        <h3>${weather.location}天气</h3>
+                        <div class="weather-info">
+                            <div class="temperature">${weather.temperature}</div>
+                            <div class="weather-details">
+                                <p>天气：${weather.weather}</p>
+                                <p>湿度：${weather.humidity}</p>
+                                <p>风向：${weather.wind}</p>
+                            </div>
+                        </div>
+                    </div>
+                `);
+                if (shouldSave) {
+                    saveChat(JSON.stringify(response), 'ai');
+                }
+                scrollToBottom();
+            } else if (response.type === 'news_list') {
+                const news = response.content;
+                $element.html(`
+                    <div class="news-list">
+                        <h3>${news.title}</h3>
+                        ${news.items.map(item => `
+                            <div class="news-item">
+                                <h4>${item.title}</h4>
+                                <p>${item.summary}</p>
+                                <span class="news-time">${item.time}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `);
+                if (shouldSave) {
+                    saveChat(JSON.stringify(response), 'ai');
+                }
+                scrollToBottom();
+            } else {
+                $element.empty();
+                let currentIndex = 0;
+                const speed = 50;
+                
+                function typeNextChar() {
+                    if (currentIndex < response.content.length) {
+                        $element.append(response.content[currentIndex]);
+                        currentIndex++;
+                        scrollToBottom();
+                        setTimeout(typeNextChar, speed);
+                    } else {
+                        if (shouldSave) {
+                            saveChat(response.content, 'ai');
+                        }
+                        scrollToBottom();
+                    }
+                }
+                
+                typeNextChar();
+            }
         }
-    }
 
-    // 新对话按钮点击事件
-    newChatButton.addEventListener('click', () => {
-        currentChatId = null;
-        isFirstMessage = true;
-        chatContainer.innerHTML = '';
-        welcomeContainer.style.display = 'flex';
-        chatContainer.style.display = 'none';
-        messageInput.value = '';
-        
-        // 移除所有聊天项的激活状态
-        document.querySelectorAll('.chat-item-content').forEach(item => {
-            item.classList.remove('active');
-        });
-    });
-
-    // 模拟AI回复
-    function getAIResponse(userMessage) {
-        const responses = [
-            "我明白了，让我来帮你解答这个问题。",
-            "这是一个很好的问题，我的建议是...",
-            "根据你的描述，我认为...",
-            "让我为你分析一下这个情况。",
-            "这个问题有几个关键点需要考虑："
-        ];
-        return responses[Math.floor(Math.random() * responses.length)];
-    }
-
-    // 添加事件监听器
-    toggleButton.addEventListener('click', () => {
-        appContainer.classList.toggle('sidebar-open');
-    });
-
-    sendButton.addEventListener('click', sendMessage);
-    messageInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
+        // 滚动到底部
+        function scrollToBottom() {
+            requestAnimationFrame(() => {
+                $chatContainer.scrollTop($chatContainer[0].scrollHeight);
+                $('main').scrollTop($('main')[0].scrollHeight);
+                setTimeout(() => {
+                    $chatContainer.scrollTop($chatContainer[0].scrollHeight);
+                    $('main').scrollTop($('main')[0].scrollHeight);
+                }, 100);
+            });
         }
-    });
 
-    // 删除聊天记录
-    function deleteChat(chatId) {
-        if (!confirm('确定要删除这个对话吗？')) return;
-
-        const history = JSON.parse(localStorage.getItem('chatHistory')) || [];
-        const newHistory = history.filter(chat => chat.id !== chatId);
-        localStorage.setItem('chatHistory', JSON.stringify(newHistory));
-
-        // 如果删除的是当前对话，重置到欢迎界面
-        if (chatId === currentChatId) {
+        // 新对话按钮点击事件
+        $newChatButton.on('click', function() {
             currentChatId = null;
             isFirstMessage = true;
-            chatContainer.innerHTML = '';
-            welcomeContainer.style.display = 'flex';
-            chatContainer.style.display = 'none';
-            messageInput.value = '';
+            $chatContainer.empty();
+            $welcomeContainer.show();
+            $chatContainer.hide();
+            $messageInput.val('');
+            
+            $('.chat-item-content').removeClass('active');
+        });
+
+        // 添加事件监听器
+        $toggleButton.on('click', function() {
+            $appContainer.toggleClass('sidebar-open');
+            // 如果打开侧边栏，同时关闭菜单
+            if ($appContainer.hasClass('sidebar-open')) {
+                $appContainer.removeClass('menu-open');
+            }
+        });
+
+        // 为菜单图标添加点击事件
+        $('.toggle-menu').on('click', function() {
+            $appContainer.toggleClass('menu-open');
+            // 如果打开菜单，同时关闭侧边栏
+            if ($appContainer.hasClass('menu-open')) {
+                $appContainer.removeClass('sidebar-open');
+            }
+        });
+
+        $sendButton.on('click', sendMessage);
+        $messageInput.on('keypress', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // 删除聊天记录
+        function deleteChat(chatId) {
+            if (!confirm('确定要删除这个对话吗？')) return;
+
+            chatService.deleteChat(chatId);
+
+            if (chatId === currentChatId) {
+                currentChatId = null;
+                isFirstMessage = true;
+                $chatContainer.empty();
+                $welcomeContainer.show();
+                $chatContainer.hide();
+                $messageInput.val('');
+            }
+
+            loadChatHistory();
         }
 
-        loadChatHistory(); // 刷新侧边栏
-    }
+        // 切换收藏状态
+        function toggleFavorite(chatId) {
+            const chat = chatService.getChat(chatId);
+            if (chat) {
+                chat.favorite = !chat.favorite;
+                chatService.saveChat(chat);
+                loadChatHistory();
+            }
+        }
 
-    // 初始加载聊天历史
-    loadChatHistory();
+        // 初始加载聊天历史
+        loadChatHistory();
+    });
 </script>
 </html> 
